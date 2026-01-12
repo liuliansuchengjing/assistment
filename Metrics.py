@@ -72,7 +72,44 @@ class Metrics(object):
         # 	return 0.0
         return score / min(len(actual), k)
 
-    def compute_metric(self, y_prob, y_true, k_list=[10, 50, 100]):
+    def ndcg(self, y_, topk, k):
+        DCG_score = 0
+        IDCG_score = 0
+        NDCG = 0
+        for i in range(k):
+            if topk[i] == y_:
+                DCG_score += 1 / np.log2(i + 2)
+                IDCG_score += 1 / np.log2(2)
+
+        if IDCG_score != 0:
+            NDCG = DCG_score / IDCG_score
+
+        return NDCG
+
+    # def compute_metric(self, y_prob, y_true, k_list=[10, 50, 100]):
+    #     '''
+    #         y_true: (#samples, )
+    #         y_pred: (#samples, #users)
+    #     '''
+    #     scores_len = 0
+    #     y_prob = np.array(y_prob)
+    #     y_true = np.array(y_true)
+    #
+    #     scores = {'hits@' + str(k): [] for k in k_list}
+    #     scores.update({'map@' + str(k): [] for k in k_list})
+    #     for p_, y_ in zip(y_prob, y_true):
+    #         if y_ != self.PAD:
+    #             scores_len += 1.0
+    #             p_sort = p_.argsort()
+    #             for k in k_list:
+    #                 topk = p_sort[-k:][::-1]
+    #                 scores['hits@' + str(k)].extend([1. if y_ in topk else 0.])
+    #                 scores['map@' + str(k)].extend([self.apk([y_], topk, k)])
+    #
+    #     scores = {k: np.mean(v) for k, v in scores.items()}
+    #     return scores, scores_len
+
+    def compute_metric(self, y_prob, y_true, k_list=[1,3,5,10, 50, 100]):
         '''
             y_true: (#samples, )
             y_pred: (#samples, #users)
@@ -83,14 +120,16 @@ class Metrics(object):
 
         scores = {'hits@' + str(k): [] for k in k_list}
         scores.update({'map@' + str(k): [] for k in k_list})
+        scores.update({'NDCG@' + str(k): [] for k in k_list})
         for p_, y_ in zip(y_prob, y_true):
-            if y_ != self.PAD:
+            if y_ != self.PAD and y_ != 1:
                 scores_len += 1.0
                 p_sort = p_.argsort()
                 for k in k_list:
                     topk = p_sort[-k:][::-1]
                     scores['hits@' + str(k)].extend([1. if y_ in topk else 0.])
                     scores['map@' + str(k)].extend([self.apk([y_], topk, k)])
+                    scores['NDCG@' + str(k)].extend([self.ndcg(y_, topk, k)])
 
         scores = {k: np.mean(v) for k, v in scores.items()}
         return scores, scores_len

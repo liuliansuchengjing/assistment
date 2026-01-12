@@ -194,6 +194,7 @@ def test_epoch(model, validation_data, graph, hypergraph_list, kt_loss, k_list=[
     for k in k_list:
         scores['hits@' + str(k)] = 0
         scores['map@' + str(k)] = 0
+        scores['NDCG@' + str(k)] = 0
 
     n_total_words = 0
     with torch.no_grad():
@@ -223,10 +224,12 @@ def test_epoch(model, validation_data, graph, hypergraph_list, kt_loss, k_list=[
             for k in k_list:
                 scores['hits@' + str(k)] += scores_batch['hits@' + str(k)] * scores_len
                 scores['map@' + str(k)] += scores_batch['map@' + str(k)] * scores_len
+                scores['NDCG@' + str(k)] += scores_batch['NDCG@' + str(k)] * scores_len
 
     for k in k_list:
         scores['hits@' + str(k)] = scores['hits@' + str(k)] / n_total_words
         scores['map@' + str(k)] = scores['map@' + str(k)] / n_total_words
+        scores['NDCG@' + str(k)] = scores['NDCG@' + str(k)] / n_total_words
 
     return scores, auc_test, acc_test
 
@@ -247,7 +250,7 @@ def test_model(MSHGAT, data_path):
     model.load_state_dict(torch.load(opt.save_path))
     model.cuda()
     kt_loss = kt_loss.cuda()
-    scores, auc_test, acc_test = test_epoch(model, test_data, relation_graph, hypergraph_list, kt_loss, k_list=[5, 10, 20, 30, 40, 50])
+    scores, auc_test, acc_test = test_epoch(model, test_data, relation_graph, hypergraph_list, kt_loss, k_list=[1,3, 5, 10])
     print('  - (Test) ')
     for metric in scores.keys():
         print(metric + ' ' + str(scores[metric]))
