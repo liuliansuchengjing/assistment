@@ -92,7 +92,7 @@ def train_epoch(model, training_data, graph, hypergraph_list, loss_func, kt_loss
         loss, n_correct = get_performance(loss_func, pred, gold)
         loss_kt, auc, acc = kt_loss(pred_res, ans,
                                     kt_mask)  # ============================================================================
-        loss = loss + 1000 * loss_kt
+        loss = loss + loss_kt
         # print("loss_kt:", loss_kt)
 
         loss.backward()
