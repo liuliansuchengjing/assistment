@@ -2,7 +2,7 @@
 # from integrated_system import PersonalizedLearningSystem
 #
 # # 初始化系统
-# system = PersonalizedLearningSystem("./checkpoint/DiffusionPrediction.pt")
+# system = PersonalizedLearningSystem("./checkpoint/DiffusionPrediction_MOO.pt")
 #
 # # 训练RL调整器
 # system.train_rl_adjuster(
