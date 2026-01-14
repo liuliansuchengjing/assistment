@@ -69,6 +69,11 @@ def train_epoch(model, training_data, graph, hypergraph_list, loss_func, kt_loss
     batch_num = 0.0
     auc_train = []
     acc_train = []
+    #新增指标
+    kt_prec_train = []
+    kt_rec_train = []
+    kt_f1_train = []
+
 
     for i, batch in enumerate(
             training_data):  # tqdm(training_data, mininterval=2, desc='  - (Training)   ', leave=False):
@@ -90,8 +95,10 @@ def train_epoch(model, training_data, graph, hypergraph_list, loss_func, kt_loss
 
         # loss
         loss, n_correct = get_performance(loss_func, pred, gold)
-        loss_kt, auc, acc = kt_loss(pred_res, ans,
-                                    kt_mask)  # ============================================================================
+        # loss_kt, auc, acc = kt_loss(pred_res, ans,
+        #                             kt_mask)  # ============================================================================
+        loss_kt, auc, acc, kt_prec, kt_rec, kt_f1 = kt_loss(pred_res, ans, kt_mask)
+
         # loss = loss + loss_kt
         loss = loss
         # print("loss_kt:", loss_kt)
@@ -104,13 +111,24 @@ def train_epoch(model, training_data, graph, hypergraph_list, loss_func, kt_loss
 
         n_total_correct += n_correct
         total_loss += loss.item()
-        if auc != -1 and acc != -1:  # ========================================================================================
-            auc_train.append(
-                auc)  # ====================================================================================
-            acc_train.append(
-                acc)  # ==========================================================================================
+        # if auc != -1 and acc != -1:  # ========================================================================================
+        #     auc_train.append(
+        #         auc)  # ====================================================================================
+        #     acc_train.append(
+        #         acc)  # ==========================================================================================
+        if auc != -1 and acc != -1:
+            auc_train.append(auc)
+            acc_train.append(acc)
+            kt_prec_train.append(kt_prec)
+            kt_rec_train.append(kt_rec)
+            kt_f1_train.append(kt_f1)
 
-    return total_loss / n_total_words, n_total_correct / n_total_words, auc_train, acc_train
+
+    # return total_loss / n_total_words, n_total_correct / n_total_words, auc_train, acc_train
+    return total_loss / n_total_words, n_total_correct / n_total_words, auc_train, acc_train, kt_prec_train, kt_rec_train, kt_f1_train
+
+def safe_mean(x):
+    return float(np.mean(x)) if len(x) > 0 else -1.0
 
 
 def train_model(MSHGAT, data_path):
@@ -147,8 +165,11 @@ def train_model(MSHGAT, data_path):
         print('\n[ Epoch', epoch_i, ']')
 
         start = time.time()
-        train_loss, train_accu, train_auc, train_acc = train_epoch(model, train_data, relation_graph, hypergraph_list,
+        # train_loss, train_accu, train_auc, train_acc = train_epoch(model, train_data, relation_graph, hypergraph_list,
+        #                                                            loss_func, kt_loss, optimizer)
+        train_loss, train_accu, train_auc, train_acc, train_kt_p, train_kt_r, train_kt_f1 = train_epoch(model, train_data, relation_graph, hypergraph_list,
                                                                    loss_func, kt_loss, optimizer)
+
 
         print('  - (Training)   loss: {loss: 8.5f}, accuracy: {accu:3.3f} %, ' \
               'elapse: {elapse:3.3f} min'.format(
@@ -156,10 +177,15 @@ def train_model(MSHGAT, data_path):
             elapse=(time.time() - start) / 60))
         print('auc_test: {:.10f}'.format(np.mean(train_auc)),
               'acc_test: {:.10f}'.format(np.mean(train_acc)))
+        print('KT auc: {:.6f} acc: {:.6f} P: {:.6f} R: {:.6f} F1: {:.6f}'.format(
+            safe_mean(train_auc), safe_mean(train_acc),
+            safe_mean(train_kt_p), safe_mean(train_kt_r), safe_mean(train_kt_f1)
+        ))
 
         if epoch_i >= 0:
             start = time.time()
-            scores, auc_test, acc_test = test_epoch(model, valid_data, relation_graph, hypergraph_list, kt_loss)
+            # scores, auc_test, acc_test = test_epoch(model, valid_data, relation_graph, hypergraph_list, kt_loss)
+            scores, auc_test, acc_test, kt_p, kt_r, kt_f1 = test_epoch(model, valid_data, relation_graph, hypergraph_list, kt_loss)
             print('  - ( Validation )) ')
             for metric in scores.keys():
                 print(metric + ' ' + str(scores[metric]))
@@ -168,7 +194,7 @@ def train_model(MSHGAT, data_path):
             print("Validation use time: ", (time.time() - start) / 60, "min")
 
             print('  - (Test) ')
-            scores, auc_test, acc_test  = test_epoch(model, test_data, relation_graph, hypergraph_list, kt_loss)
+            scores, auc_test, acc_test, kt_p, kt_r, kt_f1 = test_epoch(model, test_data, relation_graph, hypergraph_list, kt_loss)
             for metric in scores.keys():
                 print(metric + ' ' + str(scores[metric]))
             print('auc_test: {:.10f}'.format(np.mean(auc_test)),
@@ -190,13 +216,21 @@ def test_epoch(model, validation_data, graph, hypergraph_list, kt_loss, k_list=[
     model.eval()
     auc_test = []
     acc_test = []
+    kt_prec_test = []
+    kt_rec_test = []
+    kt_f1_test = []
+
     scores = {}
     for k in k_list:
         scores['hits@' + str(k)] = 0
         scores['map@' + str(k)] = 0
         scores['NDCG@' + str(k)] = 0
+        scores['precision@' + str(k)] = 0
+        scores['recall@' + str(k)] = 0
+        scores['f1@' + str(k)] = 0
 
     n_total_words = 0
+
     with torch.no_grad():
         for i, batch in enumerate(
                 validation_data):  # tqdm(validation_data, mininterval=2, desc='  - (Validation) ', leave=False):
@@ -211,13 +245,16 @@ def test_epoch(model, validation_data, graph, hypergraph_list, kt_loss, k_list=[
             pred, pred_res, kt_mask = model(tgt, tgt_timestamp, tgt_idx, ans, graph,
                                             hypergraph_list)  # ==================================
             y_pred = pred.detach().cpu().numpy()
-            loss_kt, auc, acc = kt_loss(pred_res.cpu(), ans.cpu(),
-                                        kt_mask.cpu())  # ====================================================================
-            if auc != -1 and acc != -1:  # ========================================================================================
-                auc_test.append(
-                    auc)  # ====================================================================================
-                acc_test.append(
-                    acc)  # ==========================================================================================
+            # loss_kt, auc, acc = kt_loss(pred_res.cpu(), ans.cpu(),
+            #                             kt_mask.cpu())  # ====================================================================
+            loss_kt, auc, acc, kt_prec, kt_rec, kt_f1 = kt_loss(pred_res.cpu(), ans.cpu(), kt_mask.cpu())
+
+            if auc != -1 and acc != -1:
+                auc_test.append(auc)
+                acc_test.append(acc)
+                kt_prec_test.append(kt_prec)
+                kt_rec_test.append(kt_rec)
+                kt_f1_test.append(kt_f1)
 
             scores_batch, scores_len = metric.compute_metric(y_pred, y_gold, k_list)
             n_total_words += scores_len
@@ -225,13 +262,19 @@ def test_epoch(model, validation_data, graph, hypergraph_list, kt_loss, k_list=[
                 scores['hits@' + str(k)] += scores_batch['hits@' + str(k)] * scores_len
                 scores['map@' + str(k)] += scores_batch['map@' + str(k)] * scores_len
                 scores['NDCG@' + str(k)] += scores_batch['NDCG@' + str(k)] * scores_len
+                scores['precision@' + str(k)] += scores_batch['precision@' + str(k)] * scores_len
+                scores['recall@' + str(k)] += scores_batch['recall@' + str(k)] * scores_len
+                scores['f1@' + str(k)] += scores_batch['f1@' + str(k)] * scores_len
 
     for k in k_list:
-        scores['hits@' + str(k)] = scores['hits@' + str(k)] / n_total_words
-        scores['map@' + str(k)] = scores['map@' + str(k)] / n_total_words
-        scores['NDCG@' + str(k)] = scores['NDCG@' + str(k)] / n_total_words
+        scores['hits@' + str(k)] /= n_total_words
+        scores['map@' + str(k)] /= n_total_words
+        scores['NDCG@' + str(k)] /= n_total_words
+        scores['precision@' + str(k)] /= n_total_words
+        scores['recall@' + str(k)] /= n_total_words
+        scores['f1@' + str(k)] /= n_total_words
 
-    return scores, auc_test, acc_test
+    return scores, auc_test, acc_test, kt_prec_test, kt_rec_test, kt_f1_test
 
 
 def test_model(MSHGAT, data_path):
@@ -250,12 +293,16 @@ def test_model(MSHGAT, data_path):
     model.load_state_dict(torch.load(opt.save_path))
     model.cuda()
     kt_loss = kt_loss.cuda()
-    scores, auc_test, acc_test = test_epoch(model, test_data, relation_graph, hypergraph_list, kt_loss, k_list=[1,3, 5, 10])
+    scores, auc_test, acc_test, kt_p, kt_r, kt_f1 = test_epoch(model, test_data, relation_graph, hypergraph_list, kt_loss, k_list=[1,3, 5, 10])
     print('  - (Test) ')
     for metric in scores.keys():
         print(metric + ' ' + str(scores[metric]))
     print('auc_test: {:.10f}'.format(np.mean(auc_test)),
                   'acc_test: {:.10f}'.format(np.mean(acc_test)))
+    print('KT auc: {:.6f} acc: {:.6f} P: {:.6f} R: {:.6f} F1: {:.6f}'.format(
+        safe_mean(auc_test), safe_mean(acc_test),
+        safe_mean(kt_p), safe_mean(kt_r), safe_mean(kt_f1)
+    ))
 
 
 if __name__ == "__main__":

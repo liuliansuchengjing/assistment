@@ -7,7 +7,8 @@ from collections import defaultdict
 import networkx as nx
 import torch
 import torch.nn as nn
-from sklearn.metrics import roc_auc_score, accuracy_score
+from sklearn.metrics import roc_auc_score, accuracy_score, precision_score, recall_score, f1_score
+
 
 
 def load_idx2u():
@@ -109,7 +110,7 @@ class Metrics(object):
     #     scores = {k: np.mean(v) for k, v in scores.items()}
     #     return scores, scores_len
 
-    def compute_metric(self, y_prob, y_true, k_list=[1,3,5,10, 50, 100]):
+    def compute_metric(self, y_prob, y_true, k_list=[3, 5, 7, 9]):
         '''
             y_true: (#samples, )
             y_pred: (#samples, #users)
@@ -121,15 +122,29 @@ class Metrics(object):
         scores = {'hits@' + str(k): [] for k in k_list}
         scores.update({'map@' + str(k): [] for k in k_list})
         scores.update({'NDCG@' + str(k): [] for k in k_list})
+        scores.update({'precision@' + str(k): [] for k in k_list})
+        scores.update({'recall@' + str(k): [] for k in k_list})
+        scores.update({'f1@' + str(k): [] for k in k_list})
+
         for p_, y_ in zip(y_prob, y_true):
             if y_ != self.PAD and y_ != 1:
                 scores_len += 1.0
                 p_sort = p_.argsort()
                 for k in k_list:
                     topk = p_sort[-k:][::-1]
-                    scores['hits@' + str(k)].extend([1. if y_ in topk else 0.])
+                    hit = 1.0 if y_ in topk else 0.0
+                    scores['hits@' + str(k)].extend([hit])
                     scores['map@' + str(k)].extend([self.apk([y_], topk, k)])
                     scores['NDCG@' + str(k)].extend([self.ndcg(y_, topk, k)])
+
+                    # ---- TopK Precision/Recall/F1 (single ground-truth) ----
+                    prec_k = hit / float(k)
+                    rec_k = hit  # 因为只有 1 个相关项
+                    f1_k = 0.0 if (prec_k + rec_k) == 0 else 2 * prec_k * rec_k / (prec_k + rec_k)
+
+                    scores['precision@' + str(k)].extend([prec_k])
+                    scores['recall@' + str(k)].extend([rec_k])
+                    scores['f1@' + str(k)].extend([f1_k])
 
         scores = {k: np.mean(v) for k, v in scores.items()}
         return scores, scores_len
@@ -160,19 +175,37 @@ class KTLoss(nn.Module):
         real_answers = real_answers[:, 1:].float()  # 截取有效部分并转为浮点
         answer_mask = kt_mask.bool()
 
-        # --- 计算 AUC 和 ACC ---
+        # # --- 计算 AUC 和 ACC ---
+        # try:
+        #     y_true = real_answers[answer_mask].cpu().detach().numpy()
+        #     y_pred = pred_answers[answer_mask].cpu().detach().numpy()
+        #     auc = roc_auc_score(y_true, y_pred)
+        #     acc = accuracy_score(y_true, (y_pred >= 0.5).astype(int))  # 直接根据概率阈值计算ACC
+        # except ValueError:
+        #     auc, acc = -1, -1
+        # --- 计算 AUC / ACC / Precision / Recall / F1 ---
         try:
             y_true = real_answers[answer_mask].cpu().detach().numpy()
             y_pred = pred_answers[answer_mask].cpu().detach().numpy()
+
             auc = roc_auc_score(y_true, y_pred)
-            acc = accuracy_score(y_true, (y_pred >= 0.5).astype(int))  # 直接根据概率阈值计算ACC
+            y_hat = (y_pred >= 0.5).astype(int)
+
+            acc = accuracy_score(y_true, y_hat)
+            precision = precision_score(y_true, y_hat, zero_division=0)
+            recall = recall_score(y_true, y_hat, zero_division=0)
+            f1 = f1_score(y_true, y_hat, zero_division=0)
+
         except ValueError:
-            auc, acc = -1, -1
+            auc, acc, precision, recall, f1 = -1, -1, -1, -1, -1
+
 
         # --- 计算带掩码的 BCE 损失 ---
         loss_per_element = self.bce_loss(pred_answers, real_answers)
         valid_loss = loss_per_element * answer_mask.float()  # 应用掩码
         loss = valid_loss.sum() / answer_mask.float().sum()  # 仅对有效位置求平均
 
-        return loss, auc, acc
+        # return loss, auc, acc
+        return loss, auc, acc, precision, recall, f1
+
 
