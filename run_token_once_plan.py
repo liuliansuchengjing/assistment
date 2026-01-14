@@ -356,9 +356,20 @@ def test_epoch_once_plan_token(model, validation_data, graph, hypergraph_list,
 
                         if t + 1 < L:
                             tgt_w[:, t + 1:] = Constants.PAD
-                            ts_w[:, t + 1:] = 0
-                            idx_w[:, t + 1:] = 0
-                            ans_w[:, t + 1:] = 0
+
+                            if ts_w.dim() == 2 and ts_w.size(1) == L:
+                                ts_w[:, t + 1:] = 0
+                            elif ts_w.dim() == 1 and ts_w.numel() == L:
+                                ts_w[t + 1:] = 0
+
+                            # tgt_idx may be (B,) not (B,L) -> only mask when sequence-shaped
+                            if idx_w.dim() == 2 and idx_w.size(1) == L:
+                                idx_w[:, t + 1:] = 0
+
+                            if ans_w.dim() == 2 and ans_w.size(1) == L:
+                                ans_w[:, t + 1:] = 0
+                            elif ans_w.dim() == 1 and ans_w.numel() == L:
+                                ans_w[t + 1:] = 0
 
                         # open-loop greedy rollout for m steps
                         y_pred_win = []
