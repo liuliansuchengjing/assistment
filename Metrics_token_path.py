@@ -149,64 +149,63 @@ class Metrics(object):
         scores = {k: np.mean(v) for k, v in scores.items()}
         return scores, scores_len
 
+    def compute_token_metrics(self, y_true, y_pred, ignore_ids=(0, 1)):
+        """Token-level (position-wise) classification metrics.
 
-def compute_token_metrics(self, y_true, y_pred, ignore_ids=(0, 1)):
-    """Token-level (position-wise) classification metrics.
+        This is used for path prediction evaluation where we generate a length-m path and
+        compare each position token with the ground-truth token.
 
-    This is used for path prediction evaluation where we generate a length-m path and
-    compare each position token with the ground-truth token.
+        Args:
+            y_true: 1D list/np.ndarray of ground-truth item ids.
+            y_pred: 1D list/np.ndarray of predicted item ids.
+            ignore_ids: ids to ignore in y_true (e.g., PAD=0, special token=1).
 
-    Args:
-        y_true: 1D list/np.ndarray of ground-truth item ids.
-        y_pred: 1D list/np.ndarray of predicted item ids.
-        ignore_ids: ids to ignore in y_true (e.g., PAD=0, special token=1).
+        Returns:
+            dict with:
+                - acc
+                - micro_p, micro_r, micro_f1
+                - macro_p, macro_r, macro_f1
+        """
+        y_true = np.array(y_true, dtype=np.int64)
+        y_pred = np.array(y_pred, dtype=np.int64)
+        if y_true.shape[0] == 0:
+            return {
+                'acc': -1.0,
+                'micro_p': -1.0, 'micro_r': -1.0, 'micro_f1': -1.0,
+                'macro_p': -1.0, 'macro_r': -1.0, 'macro_f1': -1.0,
+            }
 
-    Returns:
-        dict with:
-            - acc
-            - micro_p, micro_r, micro_f1
-            - macro_p, macro_r, macro_f1
-    """
-    y_true = np.array(y_true, dtype=np.int64)
-    y_pred = np.array(y_pred, dtype=np.int64)
-    if y_true.shape[0] == 0:
+        mask = np.ones_like(y_true, dtype=bool)
+        for ig in ignore_ids:
+            mask &= (y_true != ig)
+
+        y_true_f = y_true[mask]
+        y_pred_f = y_pred[mask]
+        if y_true_f.shape[0] == 0:
+            return {
+                'acc': -1.0,
+                'micro_p': -1.0, 'micro_r': -1.0, 'micro_f1': -1.0,
+                'macro_p': -1.0, 'macro_r': -1.0, 'macro_f1': -1.0,
+            }
+
+        acc = float(np.mean(y_true_f == y_pred_f))
+
+        # labels for macro to avoid undefined metrics when some classes are missing
+        labels = np.unique(np.concatenate([y_true_f, y_pred_f], axis=0))
+
+        micro_p = precision_score(y_true_f, y_pred_f, average='micro', labels=labels, zero_division=0)
+        micro_r = recall_score(y_true_f, y_pred_f, average='micro', labels=labels, zero_division=0)
+        micro_f1 = f1_score(y_true_f, y_pred_f, average='micro', labels=labels, zero_division=0)
+
+        macro_p = precision_score(y_true_f, y_pred_f, average='macro', labels=labels, zero_division=0)
+        macro_r = recall_score(y_true_f, y_pred_f, average='macro', labels=labels, zero_division=0)
+        macro_f1 = f1_score(y_true_f, y_pred_f, average='macro', labels=labels, zero_division=0)
+
         return {
-            'acc': -1.0,
-            'micro_p': -1.0, 'micro_r': -1.0, 'micro_f1': -1.0,
-            'macro_p': -1.0, 'macro_r': -1.0, 'macro_f1': -1.0,
+            'acc': float(acc),
+            'micro_p': float(micro_p), 'micro_r': float(micro_r), 'micro_f1': float(micro_f1),
+            'macro_p': float(macro_p), 'macro_r': float(macro_r), 'macro_f1': float(macro_f1),
         }
-
-    mask = np.ones_like(y_true, dtype=bool)
-    for ig in ignore_ids:
-        mask &= (y_true != ig)
-
-    y_true_f = y_true[mask]
-    y_pred_f = y_pred[mask]
-    if y_true_f.shape[0] == 0:
-        return {
-            'acc': -1.0,
-            'micro_p': -1.0, 'micro_r': -1.0, 'micro_f1': -1.0,
-            'macro_p': -1.0, 'macro_r': -1.0, 'macro_f1': -1.0,
-        }
-
-    acc = float(np.mean(y_true_f == y_pred_f))
-
-    # labels for macro to avoid undefined metrics when some classes are missing
-    labels = np.unique(np.concatenate([y_true_f, y_pred_f], axis=0))
-
-    micro_p = precision_score(y_true_f, y_pred_f, average='micro', labels=labels, zero_division=0)
-    micro_r = recall_score(y_true_f, y_pred_f, average='micro', labels=labels, zero_division=0)
-    micro_f1 = f1_score(y_true_f, y_pred_f, average='micro', labels=labels, zero_division=0)
-
-    macro_p = precision_score(y_true_f, y_pred_f, average='macro', labels=labels, zero_division=0)
-    macro_r = recall_score(y_true_f, y_pred_f, average='macro', labels=labels, zero_division=0)
-    macro_f1 = f1_score(y_true_f, y_pred_f, average='macro', labels=labels, zero_division=0)
-
-    return {
-        'acc': float(acc),
-        'micro_p': float(micro_p), 'micro_r': float(micro_r), 'micro_f1': float(micro_f1),
-        'macro_p': float(macro_p), 'macro_r': float(macro_r), 'macro_f1': float(macro_f1),
-    }
 
     def get_courses_by_video(self, video_name, course_video_mapping):
         """根据视频名称获取其所属的课程"""
@@ -215,6 +214,7 @@ def compute_token_metrics(self, y_true, y_pred, ignore_ids=(0, 1)):
             if video_name in videos:
                 courses.append(course)
         return courses
+
 
 # Calculate accuracy of prediction result and its corresponding label
 # output: tensor, labels: tensor
