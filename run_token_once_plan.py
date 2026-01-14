@@ -435,15 +435,15 @@ def test_model(MSHGAT, data_path):
 
 
 
-# Once-plan (open-loop) + Scheme A + token-level metrics for path lengths m=3/5/7/9
-once_plan_results = test_epoch_once_plan_token(
-    model, test_data, relation_graph, hypergraph_list,
-    m_list=(3, 5, 7, 9),
-    max_starts_per_seq=20  # set None to evaluate all possible starts (may be slow)
-)
-print('  - (Once-Plan Token Metrics, Scheme A) ')
-for k in sorted(once_plan_results.keys(), key=lambda x: (int(x.split('@')[-1]) if '@' in x else 0, x)):
-    print(k + ' ' + str(once_plan_results[k]))
+    # Once-plan (open-loop) + Scheme A + token-level metrics for path lengths m=3/5/7/9
+    once_plan_results = test_epoch_once_plan_token(
+        model, test_data, relation_graph, hypergraph_list,
+        m_list=(3, 5, 7, 9),
+        max_starts_per_seq=None  # set None to evaluate all possible starts (may be slow)
+    )
+    print('  - (Once-Plan Token Metrics, Scheme A) ')
+    for k in sorted(once_plan_results.keys(), key=lambda x: (int(x.split('@')[-1]) if '@' in x else 0, x)):
+        print(k + ' ' + str(once_plan_results[k]))
 
 
 if __name__ == "__main__":
