@@ -149,6 +149,69 @@ class Metrics(object):
         scores = {k: np.mean(v) for k, v in scores.items()}
         return scores, scores_len
 
+    def window_metrics(self, pred_win, gt_win):
+        """Compute metrics for a single k-step window.
+
+        Args:
+            pred_win: list[int] length k
+            gt_win: list[int] length k
+        Returns:
+            dict with keys: pos_acc, exact, precision, recall, f1, map, ndcg
+        Notes:
+            - precision/recall/f1 are computed by multiset overlap (so when |GT|=k, precision==recall).
+            - map/ndcg treat gt_win as a relevant set (order-agnostic relevance).
+        """
+        from collections import Counter
+
+        k = len(gt_win)
+        if k == 0:
+            return {
+                'pos_acc': 0.0, 'exact': 0.0,
+                'precision': 0.0, 'recall': 0.0, 'f1': 0.0,
+                'map': 0.0, 'ndcg': 0.0
+            }
+
+        # order-sensitive
+        pos_acc = float(np.mean(np.asarray(gt_win) == np.asarray(pred_win)))
+        exact = 1.0 if pred_win == gt_win else 0.0
+
+        # multiset overlap TP
+        cp, cg = Counter(pred_win), Counter(gt_win)
+        inter = set(cp.keys()) & set(cg.keys())
+        tp = sum(min(cp[x], cg[x]) for x in inter)
+
+        prec = tp / float(k)
+        rec = tp / float(k)  # |GT| = k (Scheme A)
+        f1 = 0.0 if (prec + rec) == 0 else 2 * prec * rec / (prec + rec)
+
+        # MAP / NDCG for multiple relevant items
+        gt_set = set(gt_win)
+
+        hits = 0.0
+        sum_prec = 0.0
+        for i, p in enumerate(pred_win[:k]):
+            if p in gt_set:
+                hits += 1.0
+                sum_prec += hits / (i + 1.0)
+        denom = min(len(gt_set), k)
+        ap = 0.0 if denom == 0 else sum_prec / denom
+
+        dcg = 0.0
+        for i, p in enumerate(pred_win[:k]):
+            if p in gt_set:
+                dcg += 1.0 / np.log2(i + 2)
+        ideal_len = min(len(gt_set), k)
+        idcg = sum(1.0 / np.log2(i + 2) for i in range(ideal_len))
+        ndcg = 0.0 if idcg == 0 else dcg / idcg
+
+        return {
+            'pos_acc': pos_acc, 'exact': exact,
+            'precision': prec, 'recall': rec, 'f1': f1,
+            'map': ap, 'ndcg': ndcg
+        }
+
+
+
     def compute_path_metric(self, y_prob_seq, y_true_seq, k_list=[3, 5, 7, 9]):
         """
         Path-level evaluation (Scheme A):
