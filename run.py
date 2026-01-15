@@ -27,7 +27,7 @@ torch.cuda.manual_seed(0)
 metric = Metrics()
 
 parser = argparse.ArgumentParser()
-parser.add_argument('-data_name', default='Assist')
+parser.add_argument('-data_name', default='MOO')
 parser.add_argument('-epoch', type=int, default=120)
 parser.add_argument('-batch_size', type=int, default=64)
 parser.add_argument('-d_model', type=int, default=64)
@@ -37,7 +37,7 @@ parser.add_argument('-valid_rate', type=float, default=0.1)
 parser.add_argument('-n_warmup_steps', type=int, default=1000)
 parser.add_argument('-dropout', type=float, default=0.3)
 parser.add_argument('-log', default=None)
-parser.add_argument('-save_path', default="./checkpoint/DiffusionPrediction.pt")
+parser.add_argument('-save_path', default="./checkpoint/DiffusionPrediction_MOO120.pt")
 parser.add_argument('-save_mode', type=str, choices=['all', 'best'], default='best')
 parser.add_argument('-no_cuda', action='store_true')
 parser.add_argument('-pos_emb', type=bool, default=True)
@@ -100,7 +100,7 @@ def train_epoch(model, training_data, graph, hypergraph_list, loss_func, kt_loss
         loss_kt, auc, acc, kt_prec, kt_rec, kt_f1 = kt_loss(pred_res, ans, kt_mask)
 
         # loss = loss + loss_kt
-        loss = loss
+        loss = loss + 6000 * loss_kt
         # print("loss_kt:", loss_kt)
 
         loss.backward()
@@ -307,6 +307,6 @@ def test_model(MSHGAT, data_path):
 
 if __name__ == "__main__":
     model = MSHGAT
-    # train_model(model, opt.data_name)
+    train_model(model, opt.data_name)
     # test_model(model, opt.data_name)
-    test_model(model, opt.data_name)
+    # test_model(model, opt.data_name)
